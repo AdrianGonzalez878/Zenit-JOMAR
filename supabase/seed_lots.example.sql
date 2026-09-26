@@ -1,0 +1,2 @@
+-- El inventario real está en seed_lots.sql (28 lotes de Zenit Eco Living).
+-- No uses datos demo con clientes.
