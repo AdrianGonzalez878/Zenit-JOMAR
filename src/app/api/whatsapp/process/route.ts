@@ -21,6 +21,7 @@ import {
   detectAdvisorNeed,
   type AdvisorNeedReason,
 } from "@/lib/ai/needs-advisor";
+import { sendTeamPush } from "@/lib/push/send";
 import type { Lot } from "@/types";
 
 interface ProcessPayload {
@@ -91,6 +92,32 @@ async function markNeedsAdvisor(
 
   if (error) {
     console.error("Error marking conversation as needs_advisor:", error);
+  }
+}
+
+function messagePreview(text: string) {
+  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+}
+
+async function notifyTeamOfIncoming(options: {
+  conversationId: string;
+  customerName: string;
+  content: string;
+  advisorReason?: string | null;
+}) {
+  try {
+    await sendTeamPush({
+      title: options.advisorReason ? "Necesita asesor" : `${options.customerName} respondió`,
+      body: options.advisorReason
+        ? `${options.customerName}: ${options.advisorReason}`
+        : messagePreview(options.content),
+      conversationId: options.conversationId,
+      tag: options.advisorReason
+        ? `advisor-${options.conversationId}`
+        : `chat-${options.conversationId}`,
+    });
+  } catch (error) {
+    console.error("Error sending team push:", error);
   }
 }
 
@@ -168,6 +195,15 @@ export async function POST(request: NextRequest) {
       await markNeedsAdvisor(supabase, conversation.id, pausedNeed);
     }
 
+    await notifyTeamOfIncoming({
+      conversationId: conversation.id,
+      customerName: conversation.customer_name || customerName || conversation.customer_phone,
+      content: message.text.body,
+      advisorReason:
+        pausedNeed ||
+        (conversation.needs_advisor ? conversation.needs_advisor_reason : null),
+    });
+
     return NextResponse.json({ status: "paused" });
   }
 
@@ -237,6 +273,16 @@ export async function POST(request: NextRequest) {
       await markNeedsAdvisor(supabase, conversation.id, handoffReason);
     }
   }
+
+  await notifyTeamOfIncoming({
+    conversationId: conversation.id,
+    customerName: conversation.customer_name || customerName || conversation.customer_phone,
+    content: message.text.body,
+    advisorReason:
+      customerNeed ||
+      handoffReason ||
+      (conversation.needs_advisor ? conversation.needs_advisor_reason : null),
+  });
 
   await supabase.from("messages").insert({
     conversation_id: conversation.id,

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/(auth)/actions";
+import { EnablePushButton } from "@/components/dashboard/EnablePushButton";
 import { WHATSAPP_DISPLAY_NAME } from "@/lib/branding";
 
 function WhatsAppMark({ className }: { className?: string }) {
@@ -49,6 +50,8 @@ export default async function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <EnablePushButton />
+
             <div className="hidden md:flex items-center gap-2 max-w-[220px] px-2.5 py-1.5 rounded-lg bg-white/15">
               <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold text-[#00a884] bg-white shrink-0">
                 {getInitials(email)}
