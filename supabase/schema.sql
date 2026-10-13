@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS conversations (
     CHECK (status IN ('ai_active', 'paused', 'resolved')),
   last_message_at TIMESTAMPTZ DEFAULT NOW(),
   unread_count INTEGER DEFAULT 0,
+  needs_advisor BOOLEAN NOT NULL DEFAULT false,
+  needs_advisor_at TIMESTAMPTZ,
+  needs_advisor_reason TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

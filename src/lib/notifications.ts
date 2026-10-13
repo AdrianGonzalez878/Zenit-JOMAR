@@ -52,3 +52,40 @@ export function showCustomerMessageNotification(options: {
     console.error("Browser notification failed:", error);
   }
 }
+
+export function showAdvisorNeededNotification(options: {
+  customerName: string;
+  reason: string;
+  conversationId: string;
+}) {
+  const title = "Necesita asesor";
+  const body = `${options.customerName}: ${options.reason}`;
+
+  dispatchInAppAlert({
+    title,
+    body,
+    conversationId: options.conversationId,
+  });
+
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  try {
+    const notification = new Notification(title, {
+      body,
+      tag: `advisor-${options.conversationId}`,
+    });
+
+    notification.onclick = () => {
+      window.focus();
+      window.dispatchEvent(
+        new CustomEvent("dashboard-select-conversation", {
+          detail: { id: options.conversationId },
+        })
+      );
+      notification.close();
+    };
+  } catch (error) {
+    console.error("Advisor notification failed:", error);
+  }
+}

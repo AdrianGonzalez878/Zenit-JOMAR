@@ -15,6 +15,12 @@ import {
   lotDisplayName,
 } from "@/lib/lots/catalog";
 import { sendImageMessage, sendTextMessage } from "@/lib/whatsapp/client";
+import {
+  ADVISOR_FALLBACK_REASON,
+  detectAdvisorHandoff,
+  detectAdvisorNeed,
+  type AdvisorNeedReason,
+} from "@/lib/ai/needs-advisor";
 import type { Lot } from "@/types";
 
 interface ProcessPayload {
@@ -66,6 +72,25 @@ async function incrementConversationUnread(
     if (fallbackError) {
       console.error("Error incrementing unread count:", fallbackError);
     }
+  }
+}
+
+async function markNeedsAdvisor(
+  supabase: ReturnType<typeof createServiceClient>,
+  conversationId: string,
+  reason: AdvisorNeedReason
+) {
+  const { error } = await supabase
+    .from("conversations")
+    .update({
+      needs_advisor: true,
+      needs_advisor_at: new Date().toISOString(),
+      needs_advisor_reason: reason,
+    })
+    .eq("id", conversationId);
+
+  if (error) {
+    console.error("Error marking conversation as needs_advisor:", error);
   }
 }
 
@@ -137,6 +162,12 @@ export async function POST(request: NextRequest) {
     }
 
     await incrementConversationUnread(supabase, conversation);
+
+    const pausedNeed = detectAdvisorNeed(message.text.body);
+    if (pausedNeed && !conversation.needs_advisor) {
+      await markNeedsAdvisor(supabase, conversation.id, pausedNeed);
+    }
+
     return NextResponse.json({ status: "paused" });
   }
 
@@ -154,6 +185,11 @@ export async function POST(request: NextRequest) {
   }
 
   await incrementConversationUnread(supabase, conversation);
+
+  const customerNeed = detectAdvisorNeed(message.text.body);
+  if (customerNeed && !conversation.needs_advisor) {
+    await markNeedsAdvisor(supabase, conversation.id, customerNeed);
+  }
 
   const { data: recentHistory } = await supabase
     .from("messages")
@@ -186,9 +222,21 @@ export async function POST(request: NextRequest) {
   });
   console.log("AI response length:", result.text?.length);
 
+  const generated = result.text?.trim();
+  const usedFallback = !generated;
   const aiResponse =
-    result.text?.trim() ||
+    generated ||
     `Hola, soy ${assistantName}, la asistente virtual de ${businessName}. En este momento tengo problemas para generar una respuesta. Un asesor te contacta en breve.`;
+
+  let handoffReason: AdvisorNeedReason | null = null;
+  if (!conversation.needs_advisor && !customerNeed) {
+    handoffReason = usedFallback
+      ? ADVISOR_FALLBACK_REASON
+      : detectAdvisorHandoff(aiResponse);
+    if (handoffReason) {
+      await markNeedsAdvisor(supabase, conversation.id, handoffReason);
+    }
+  }
 
   await supabase.from("messages").insert({
     conversation_id: conversation.id,

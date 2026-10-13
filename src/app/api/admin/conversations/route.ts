@@ -21,6 +21,9 @@ export async function GET() {
       status,
       last_message_at,
       unread_count,
+      needs_advisor,
+      needs_advisor_at,
+      needs_advisor_reason,
       created_at,
       messages (
         content,

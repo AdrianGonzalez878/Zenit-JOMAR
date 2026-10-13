@@ -51,6 +51,9 @@ export interface Conversation {
   last_message_at: string;
   created_at: string;
   unread_count: number;
+  needs_advisor: boolean;
+  needs_advisor_at: string | null;
+  needs_advisor_reason: string | null;
 }
 
 export type MessageRole = "user" | "assistant" | "system";

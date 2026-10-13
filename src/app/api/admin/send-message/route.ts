@@ -42,7 +42,12 @@ export async function POST(request: NextRequest) {
 
     await supabase
       .from("conversations")
-      .update({ last_message_at: new Date().toISOString() })
+      .update({
+        last_message_at: new Date().toISOString(),
+        needs_advisor: false,
+        needs_advisor_at: null,
+        needs_advisor_reason: null,
+      })
       .eq("id", conversationId);
   }
 

@@ -7,8 +7,10 @@ import { PoweredByArga } from "@/components/branding/PoweredByArga";
 import { WHATSAPP_DISPLAY_NAME } from "@/lib/branding";
 import {
   requestNotificationPermission,
+  showAdvisorNeededNotification,
   showCustomerMessageNotification,
 } from "@/lib/notifications";
+import { detectAdvisorNeed } from "@/lib/ai/needs-advisor";
 import type { Conversation, Message, ConversationStatus } from "@/types";
 
 type ConvWithPreview = Conversation & { lastMessage: string };
@@ -72,6 +74,8 @@ export default function DashboardPage() {
   const [manualText, setManualText] = useState("");
   const [sendingMsg, setSendingMsg] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [onlyNeedsAdvisor, setOnlyNeedsAdvisor] = useState(false);
+  const [advisorColumnMissing, setAdvisorColumnMissing] = useState(false);
   const [inAppAlert, setInAppAlert] = useState<{
     title: string;
     body: string;
@@ -83,6 +87,7 @@ export default function DashboardPage() {
 
   const selectedConv = conversations.find((c) => c.id === selectedId) ?? null;
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count ?? 0), 0);
+  const needsAdvisorCount = conversations.filter((c) => c.needs_advisor).length;
   const loadingMsgs = Boolean(selectedId) && loadedMsgConvId !== selectedId;
 
   const markConversationRead = useCallback(async (convId: string) => {
@@ -103,6 +108,9 @@ export default function DashboardPage() {
   }, [selectedId]);
 
   const fetchConversations = useCallback(async () => {
+    const probe = await supabase.from("conversations").select("needs_advisor").limit(1);
+    setAdvisorColumnMissing(Boolean(probe.error));
+
     const { data } = await supabase
       .from("conversations")
       .select("*, messages(content, created_at, role)")
@@ -113,7 +121,14 @@ export default function DashboardPage() {
         const sorted = [...(c.messages ?? [])].sort(
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
-        return { ...c, messages: undefined, lastMessage: sorted[0]?.content ?? "" } as ConvWithPreview;
+        return {
+          ...c,
+          needs_advisor: Boolean(c.needs_advisor),
+          needs_advisor_at: c.needs_advisor_at ?? null,
+          needs_advisor_reason: c.needs_advisor_reason ?? null,
+          messages: undefined,
+          lastMessage: sorted[0]?.content ?? "",
+        } as ConvWithPreview;
       });
       setConversations(convs);
     }
@@ -162,8 +177,19 @@ export default function DashboardPage() {
               selectedIdRef.current === updated.id &&
               document.visibilityState === "visible";
 
-            setConversations((prev) =>
-              prev.map((c) =>
+            setConversations((prev) => {
+              const previous = prev.find((c) => c.id === updated.id);
+              const becameNeedsAdvisor = Boolean(updated.needs_advisor) && !previous?.needs_advisor;
+
+              if (becameNeedsAdvisor && !viewingChat) {
+                showAdvisorNeededNotification({
+                  customerName: updated.customer_name ?? updated.customer_phone,
+                  reason: updated.needs_advisor_reason ?? "Este chat ocupa un asesor",
+                  conversationId: updated.id,
+                });
+              }
+
+              return prev.map((c) =>
                 c.id === updated.id
                   ? {
                       ...c,
@@ -174,8 +200,8 @@ export default function DashboardPage() {
                       lastMessage: c.lastMessage,
                     }
                   : c
-              )
-            );
+              );
+            });
 
             if (viewingChat && (updated.unread_count ?? 0) > 0) {
               void markConversationReadRef.current(updated.id);
@@ -219,12 +245,21 @@ export default function DashboardPage() {
               if (viewingChat) {
                 void markConversationReadRef.current(msg.conversation_id);
               } else {
-                showCustomerMessageNotification({
-                  customerName: conv.customer_name ?? conv.customer_phone,
-                  customerPhone: conv.customer_phone,
-                  content: msg.content,
-                  conversationId: conv.id,
-                });
+                const advisorReason = detectAdvisorNeed(msg.content);
+                if (advisorReason) {
+                  showAdvisorNeededNotification({
+                    customerName: conv.customer_name ?? conv.customer_phone,
+                    reason: advisorReason,
+                    conversationId: conv.id,
+                  });
+                } else {
+                  showCustomerMessageNotification({
+                    customerName: conv.customer_name ?? conv.customer_phone,
+                    customerPhone: conv.customer_phone,
+                    content: msg.content,
+                    conversationId: conv.id,
+                  });
+                }
               }
 
               return prev.map((c) => {
@@ -359,6 +394,50 @@ export default function DashboardPage() {
     if (next === "paused") setTimeout(() => inputRef.current?.focus(), 100);
   };
 
+  const handleClearAdvisorFlag = async () => {
+    if (!selectedConv || updatingStatus || !selectedConv.needs_advisor) return;
+    setUpdatingStatus(true);
+    await fetch(`/api/admin/conversations/${selectedConv.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ needs_advisor: false }),
+    });
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === selectedConv.id
+          ? { ...c, needs_advisor: false, needs_advisor_at: null, needs_advisor_reason: null }
+          : c
+      )
+    );
+    setUpdatingStatus(false);
+  };
+
+  const handleMarkNeedsAdvisor = async () => {
+    if (!selectedConv || updatingStatus || selectedConv.needs_advisor) return;
+    setUpdatingStatus(true);
+    await fetch(`/api/admin/conversations/${selectedConv.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        needs_advisor: true,
+        needs_advisor_reason: "Marcado por el asesor",
+      }),
+    });
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === selectedConv.id
+          ? {
+              ...c,
+              needs_advisor: true,
+              needs_advisor_at: new Date().toISOString(),
+              needs_advisor_reason: c.needs_advisor_reason ?? "Marcado por el asesor",
+            }
+          : c
+      )
+    );
+    setUpdatingStatus(false);
+  };
+
   const handleSendManual = async () => {
     if (!selectedConv || !manualText.trim() || sendingMsg) return;
     setSendingMsg(true);
@@ -412,7 +491,14 @@ export default function DashboardPage() {
       setConversations((prev) =>
         prev.map((c) =>
           c.id === selectedConv.id
-            ? { ...c, lastMessage: text, last_message_at: new Date().toISOString() }
+            ? {
+                ...c,
+                lastMessage: text,
+                last_message_at: new Date().toISOString(),
+                needs_advisor: false,
+                needs_advisor_at: null,
+                needs_advisor_reason: null,
+              }
             : c
         )
       );
@@ -424,11 +510,18 @@ export default function DashboardPage() {
     }
   };
 
-  const filteredConvs = conversations.filter((c) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return c.customer_name?.toLowerCase().includes(q) || c.customer_phone.includes(q);
-  });
+  const filteredConvs = conversations
+    .filter((c) => {
+      if (onlyNeedsAdvisor && !c.needs_advisor) return false;
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return c.customer_name?.toLowerCase().includes(q) || c.customer_phone.includes(q);
+    })
+    .slice()
+    .sort((a, b) => {
+      if (a.needs_advisor !== b.needs_advisor) return a.needs_advisor ? -1 : 1;
+      return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+    });
 
   const showMobileList = !selectedId;
   const showMobileChat = !!selectedId;
@@ -481,8 +574,30 @@ export default function DashboardPage() {
             <span className="hidden sm:inline text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full">
               {conversations.filter((c) => c.status === "paused").length} pausadas
             </span>
+            {(needsAdvisorCount > 0 || onlyNeedsAdvisor) && (
+              <button
+                type="button"
+                onClick={() => setOnlyNeedsAdvisor((v) => !v)}
+                className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-1 rounded-full font-semibold ${
+                  onlyNeedsAdvisor
+                    ? "bg-orange-600 text-white"
+                    : "bg-orange-50 text-orange-700"
+                }`}
+              >
+                {needsAdvisorCount} asesor
+              </button>
+            )}
           </div>
         </div>
+
+        {advisorColumnMissing && (
+          <div className="px-3 py-2 bg-amber-50 border-b border-amber-100">
+            <p className="text-amber-800 text-[11px] leading-relaxed">
+              Falta activar la bandera en Supabase. Corre supabase/migrations/004_needs_advisor.sql
+              en el proyecto de Supabase y recarga.
+            </p>
+          </div>
+        )}
 
         <div className="px-3 py-2 bg-white">
           <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-[#f0f2f5]">
@@ -539,9 +654,21 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <p className={`text-xs truncate leading-relaxed flex-1 ${unread > 0 ? "text-[#111b21] font-medium" : "text-[#667781]"}`}>
-                        {conv.lastMessage || "Sin mensajes"}
+                        {conv.needs_advisor
+                          ? conv.needs_advisor_reason || "Necesita asesor"
+                          : conv.lastMessage || "Sin mensajes"}
                       </p>
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {conv.needs_advisor && (
+                          <span
+                            className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-white"
+                            title="Necesita asesor"
+                          >
+                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M6 3a1 1 0 00-1 1v16.5a.5.5 0 00.8.4L9 18.2l3.2 2.7a1 1 0 001.3 0l3.2-2.7 3.2 2.7a.5.5 0 00.8-.4V4a1 1 0 00-1-1H6z" />
+                            </svg>
+                          </span>
+                        )}
                         {unread > 0 && (
                           <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#25d366] text-white text-[11px] font-bold flex items-center justify-center">
                             {unread > 99 ? "99+" : unread}
@@ -601,6 +728,27 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                {selectedConv.needs_advisor ? (
+                  <button
+                    type="button"
+                    onClick={handleClearAdvisorFlag}
+                    disabled={updatingStatus}
+                    className="text-[11px] sm:text-xs font-semibold px-2 sm:px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50 whitespace-nowrap"
+                    title="Quitar la bandera de necesita asesor"
+                  >
+                    Atendido
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleMarkNeedsAdvisor}
+                    disabled={updatingStatus || advisorColumnMissing}
+                    className="hidden sm:inline text-[11px] sm:text-xs font-medium px-2 sm:px-3 py-1.5 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 disabled:opacity-50 whitespace-nowrap"
+                    title="Marcar este chat como que necesita asesor"
+                  >
+                    Bandera
+                  </button>
+                )}
                 <span className={`hidden sm:inline text-xs px-2 py-1 rounded-full font-medium ${
                   selectedConv.status === "ai_active"
                     ? "bg-emerald-50 text-emerald-700"
@@ -627,6 +775,23 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
+
+            {selectedConv.needs_advisor && (
+              <div className="px-3 sm:px-4 py-2 shrink-0 bg-orange-50 border-b border-orange-100 flex items-center justify-between gap-3">
+                <p className="text-orange-800 text-xs sm:text-sm font-medium truncate">
+                  Necesita asesor
+                  {selectedConv.needs_advisor_reason ? ` · ${selectedConv.needs_advisor_reason}` : ""}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleClearAdvisorFlag}
+                  disabled={updatingStatus}
+                  className="text-[11px] font-semibold text-orange-700 hover:text-orange-900 disabled:opacity-50 shrink-0"
+                >
+                  Atendido
+                </button>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 wa-chat-bg">
               {loadingMsgs ? (
