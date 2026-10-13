@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
   const messages = buildAIMessageHistory(history, message.text.body);
   const result = await generateText({
     model: anthropic("claude-haiku-4-5"),
-    system: buildSystemPrompt(lotsContext),
+    system: buildSystemPrompt(lotsContext, conversation.customer_name || customerName),
     messages,
   });
   console.log("AI response length:", result.text?.length);
