@@ -22,6 +22,7 @@ import {
   type AdvisorNeedReason,
 } from "@/lib/ai/needs-advisor";
 import { sendTeamPush } from "@/lib/push/send";
+import { recordConfirmedCall } from "@/lib/crm/schedule-call";
 import type { Lot } from "@/types";
 
 interface ProcessPayload {
@@ -282,6 +283,16 @@ export async function POST(request: NextRequest) {
       customerNeed ||
       handoffReason ||
       (conversation.needs_advisor ? conversation.needs_advisor_reason : null),
+  });
+
+  await recordConfirmedCall(supabase, {
+    business: "zenit",
+    conversationId: conversation.id,
+    customerName: conversation.customer_name || customerName || null,
+    customerPhone: conversation.customer_phone,
+    customerText: message.text.body,
+    assistantText: aiResponse,
+    advisorName: "Asesor JOMAR",
   });
 
   await supabase.from("messages").insert({
