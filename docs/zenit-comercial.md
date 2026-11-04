@@ -1,4 +1,4 @@
-# Zenit Eco Living — ficha interna para ARGI / JOMAR
+# Zenit Eco Living — ficha interna para Jomarcito / JOMAR
 
 Fuentes (septiembre 2026 y plano 27-08-26):
 
@@ -13,7 +13,7 @@ La guía de septiembre dice “6 lotes vendidos” sin desglose; el plano marca 
 
 - Nombre: **Zenit Eco Living** (también aparece como Zenith Eco Living en la guía)
 - Comercializa: **JOMAR**
-- Asistente WhatsApp: **ARGI**
+- Asistente WhatsApp: **Jomarcito**
 - Ubicación: **La Isla, Bajos de Chila, San Pedro Mixtepec, Oaxaca**
 - Inventario: **28 lotes** residenciales en 4 manzanas (M1–M4, L-1 a L-7)
 - Idea de venta: ubicación + proyecto + infraestructura + patrimonio. No vender “solo un lote”.
@@ -72,4 +72,4 @@ No usar el “desde $600,000 / $12,500” de la guía de llamadas como cotizaci�
 3. Croquis: cada lote tiene distinta medida y precio; pedir número de lote
 4. Llamada breve 3–5 min **o** visita al desarrollo
 
-ARGI califica y agenda; no cierra venta ni pide depósito por WhatsApp.
+Jomarcito califica y agenda; no cierra venta ni pide depósito por WhatsApp.

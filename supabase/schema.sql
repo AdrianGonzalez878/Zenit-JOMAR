@@ -1,5 +1,5 @@
 -- ============================================================
--- ESQUEMA DE BASE DE DATOS — ARGI / JOMAR (Puerto Escondido)
+-- ESQUEMA DE BASE DE DATOS — JOMARCITO / JOMAR (Puerto Escondido)
 -- Ejecutar en el SQL Editor de un proyecto NUEVO de Supabase.
 -- No uses el proyecto de Conchita Plata BOT.
 -- ============================================================

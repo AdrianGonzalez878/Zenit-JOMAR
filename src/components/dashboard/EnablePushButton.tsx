@@ -22,12 +22,14 @@ function computeInitialStatus(): Status {
 }
 
 export function EnablePushButton() {
-  const [status, setStatus] = useState<Status>(computeInitialStatus);
+  const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!canUseWebPush() || Notification.permission !== "granted") return;
+    const initial = computeInitialStatus();
+    setStatus(initial);
+    if (initial !== "idle") return;
     void subscribeWebPush().then((result) => {
       if (result.ok) setStatus("on");
       else if (result.error?.includes("push_subscriptions")) setStatus("missing-sql");
@@ -57,6 +59,10 @@ export function EnablePushButton() {
     }
     setStatus(Notification.permission === "denied" ? "blocked" : "off");
     setHint(result.error ?? "No se pudieron activar los avisos.");
+  }
+
+  if (status === null) {
+    return <span className="inline-block w-8 h-8" aria-hidden />;
   }
 
   if (status === "unsupported") {

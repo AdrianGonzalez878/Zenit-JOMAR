@@ -2,8 +2,8 @@ export type AdvisorNeedReason =
   | "Pide hablar con un asesor"
   | "Quiere llamada o visita"
   | "Quiere apartar o avanzar la compra"
-  | "ARGI pasó el chat a un asesor"
-  | "ARGI no pudo responder";
+  | "Jomarcito pasó el chat a un asesor"
+  | "Jomarcito no pudo responder";
 
 function fold(text: string): string {
   return text
@@ -16,7 +16,7 @@ const HUMAN_PATTERNS = [
   /\b(asesor|asesora|agente)\b/,
   /\b(persona real|alguien real|un humano)\b/,
   /\bhablar con (alguien|una persona|un asesor|un humano|ustedes)\b/,
-  /\bno (quiero|me sirve) (hablar con )?(la |el )?(ia|argi|bot|robot)\b/,
+  /\bno (quiero|me sirve) (hablar con )?(la |el )?(ia|argi|jomarcito|bot|robot)\b/,
   /\bpasame (con |a )?(un )?(asesor|agente|humano)\b/,
 ];
 
@@ -51,8 +51,8 @@ export function detectAdvisorNeed(text: string): AdvisorNeedReason | null {
   return null;
 }
 
-export const ADVISOR_FALLBACK_REASON: AdvisorNeedReason = "ARGI no pudo responder";
-export const ADVISOR_HANDOFF_REASON: AdvisorNeedReason = "ARGI pasó el chat a un asesor";
+export const ADVISOR_FALLBACK_REASON: AdvisorNeedReason = "Jomarcito no pudo responder";
+export const ADVISOR_HANDOFF_REASON: AdvisorNeedReason = "Jomarcito pasó el chat a un asesor";
 
 const HANDOFF_PATTERNS = [
   /\bun asesor te (contacta|atiende|atendera|llama|hablara|visita)/,

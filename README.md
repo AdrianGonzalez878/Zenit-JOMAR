@@ -1,10 +1,10 @@
-# ARGI · JOMAR — Bot de WhatsApp + panel admin
+# Jomarcito · JOMAR — Bot de WhatsApp + panel admin
 
 Asistente de WhatsApp con IA para **JOMAR**, inmobiliaria de terrenos en Puerto Escondido, Oaxaca.
 
 - El negocio es **JOMAR**.
-- La asistente se llama **ARGI**. Nunca se presenta como JOMAR.
-- No hay tienda ni checkout. ARGI asesora, filtra lotes y agenda visita o llamada.
+- La asistente se llama **Jomarcito**.
+- No hay tienda ni checkout. Jomarcito asesora, filtra lotes y agenda visita o llamada.
 - No cierra ventas ni pide depósitos por WhatsApp.
 - Nunca inventa precios, medidas ni disponibilidad: solo el catálogo en Supabase (`lots`).
 
@@ -69,7 +69,7 @@ Inventario (plano 27-08-26): 21 disponibles, 3 apartados, 4 vendidos.
 Precios: tabla de preventa agosto 2026 (lista 24 MSI, enganche 10%, 36, 48, 12 meses al 4% y contado al 8%).
 Ficha: `docs/zenit-comercial.md`.
 
-Si un campo va `NULL`, ARGI dice que un **asesor lo confirma**. No inventa.
+Si un campo va `NULL`, Jomarcito dice que un **asesor lo confirma**. No inventa.
 
 ---
 
@@ -79,7 +79,7 @@ Si un campo va `NULL`, ARGI dice que un **asesor lo confirma**. No inventa.
 src/app/api/whatsapp/webhook|process
 src/app/api/admin/...
 src/app/dashboard          panel mínimo (lista, preview, unread, pausar IA)
-src/lib/ai/prompts/system  identidad ARGI + reglas de inventario
+src/lib/ai/prompts/system  identidad Jomarcito + reglas de inventario
 src/lib/lots/catalog       formato del catálogo para la IA
 supabase/schema.sql
 ```

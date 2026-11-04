@@ -1,16 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { BusinessAvatar } from "@/components/dashboard/BusinessAvatar";
+import { SwipeToDeleteRow } from "@/components/dashboard/SwipeToDeleteRow";
+import { WhatsAppProfilePanel } from "@/components/dashboard/WhatsAppProfilePanel";
 import { PoweredByArga } from "@/components/branding/PoweredByArga";
-import { WHATSAPP_DISPLAY_NAME } from "@/lib/branding";
+import { ASSISTANT_NAME, WHATSAPP_DISPLAY_NAME } from "@/lib/branding";
+import { syncAppBadge } from "@/lib/pwa/app-badge";
 import {
   requestNotificationPermission,
   showAdvisorNeededNotification,
   showCustomerMessageNotification,
 } from "@/lib/notifications";
-import { detectAdvisorNeed } from "@/lib/ai/needs-advisor";
 import type { Conversation, Message, ConversationStatus } from "@/types";
 
 type ConvWithPreview = Conversation & { lastMessage: string };
@@ -62,8 +66,75 @@ function dedupeMessages(msgs: Message[]): Message[] {
   });
 }
 
-export default function DashboardPage() {
+function previewText(content: string): string {
+  const withoutLinks = content.replace(/https?:\/\/\S+/gi, " ").replace(/\s+/g, " ").trim();
+  return withoutLinks || "Ubicación";
+}
+
+function MessageBody({ content, compact = false }: { content: string; compact?: boolean }) {
+  const nodes: ReactNode[] = [];
+  const urlPattern = /https?:\/\/[^\s<>]+/gi;
+  let last = 0;
+  let key = 0;
+
+  for (const match of content.matchAll(urlPattern)) {
+    const index = match.index ?? 0;
+    const raw = match[0];
+    const url = raw.replace(/[),.;]+$/, "");
+    if (index > last) nodes.push(content.slice(last, index));
+
+    const isMap = /google\.com\/maps|maps\.app\.goo\.gl|goo\.gl\/maps/i.test(url);
+    if (isMap) {
+      nodes.push(
+        <a
+          key={key++}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="my-1 flex max-w-full min-w-0 items-center gap-2 rounded-md border border-black/10 bg-white px-2.5 py-2 text-[13px] font-medium text-[#027eb5] no-underline"
+        >
+          <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6a2.5 2.5 0 010 5z" />
+          </svg>
+          <span className="min-w-0 truncate">Ver ubicación</span>
+        </a>
+      );
+    } else {
+      nodes.push(
+        <a
+          key={key++}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#027eb5] underline break-all"
+        >
+          {url}
+        </a>
+      );
+    }
+
+    const trailing = raw.slice(url.length);
+    if (trailing) nodes.push(trailing);
+    last = index + raw.length;
+  }
+
+  if (last < content.length) nodes.push(content.slice(last));
+
+  return (
+    <div
+      className={`text-[#111b21] leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${
+        compact ? "text-xs" : ""
+      }`}
+    >
+      {nodes.length ? nodes : content}
+    </div>
+  );
+}
+
+export function DashboardWorkspace({ panel = "chat" }: { panel?: "chat" | "profile" }) {
   const supabase = createClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [conversations, setConversations] = useState<ConvWithPreview[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -107,6 +178,12 @@ export default function DashboardPage() {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
 
+  useEffect(() => {
+    if (panel !== "chat") return;
+    const convId = searchParams.get("c");
+    if (convId) setSelectedId(convId);
+  }, [panel, searchParams]);
+
   const fetchConversations = useCallback(async () => {
     const probe = await supabase.from("conversations").select("needs_advisor").limit(1);
     setAdvisorColumnMissing(Boolean(probe.error));
@@ -127,7 +204,7 @@ export default function DashboardPage() {
           needs_advisor_at: c.needs_advisor_at ?? null,
           needs_advisor_reason: c.needs_advisor_reason ?? null,
           messages: undefined,
-          lastMessage: sorted[0]?.content ?? "",
+          lastMessage: previewText(sorted[0]?.content ?? ""),
         } as ConvWithPreview;
       });
       setConversations(convs);
@@ -228,7 +305,7 @@ export default function DashboardPage() {
               if (!conv) return prev;
 
               const previewUpdate = {
-                lastMessage: msg.content,
+                lastMessage: previewText(msg.content),
                 last_message_at: msg.created_at,
               };
 
@@ -245,21 +322,12 @@ export default function DashboardPage() {
               if (viewingChat) {
                 void markConversationReadRef.current(msg.conversation_id);
               } else {
-                const advisorReason = detectAdvisorNeed(msg.content);
-                if (advisorReason) {
-                  showAdvisorNeededNotification({
-                    customerName: conv.customer_name ?? conv.customer_phone,
-                    reason: advisorReason,
-                    conversationId: conv.id,
-                  });
-                } else {
-                  showCustomerMessageNotification({
-                    customerName: conv.customer_name ?? conv.customer_phone,
-                    customerPhone: conv.customer_phone,
-                    content: msg.content,
-                    conversationId: conv.id,
-                  });
-                }
+                showCustomerMessageNotification({
+                  customerName: conv.customer_name ?? conv.customer_phone,
+                  customerPhone: conv.customer_phone,
+                  content: msg.content,
+                  conversationId: conv.id,
+                });
               }
 
               return prev.map((c) => {
@@ -280,6 +348,13 @@ export default function DashboardPage() {
       channels.push(convChannel, messageChannel);
     };
 
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void fetchConversations();
+    };
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    window.addEventListener("focus", refreshIfVisible);
+    const refreshTimer = window.setInterval(refreshIfVisible, 15_000);
+
     void setupRealtime();
 
     const {
@@ -290,6 +365,9 @@ export default function DashboardPage() {
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.removeEventListener("focus", refreshIfVisible);
+      window.clearInterval(refreshTimer);
       subscription.unsubscribe();
       channels.forEach((ch) => supabase.removeChannel(ch));
     };
@@ -307,6 +385,7 @@ export default function DashboardPage() {
       totalUnread > 0
         ? `(${totalUnread}) ${WHATSAPP_DISPLAY_NAME}`
         : WHATSAPP_DISPLAY_NAME;
+    syncAppBadge(totalUnread);
   }, [totalUnread]);
 
   useEffect(() => {
@@ -523,8 +602,31 @@ export default function DashboardPage() {
       return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
     });
 
-  const showMobileList = !selectedId;
-  const showMobileChat = !!selectedId;
+  const showMobileList = panel === "chat" && !selectedId;
+  const showMobileRight = panel === "profile" || !!selectedId;
+
+  async function deleteConversation(convId: string) {
+    const response = await fetch(`/api/admin/conversations/${convId}`, { method: "DELETE" });
+    if (!response.ok) {
+      throw new Error("delete failed");
+    }
+    setConversations((prev) => prev.filter((c) => c.id !== convId));
+    if (selectedIdRef.current === convId) {
+      setSelectedId(null);
+      setMessages([]);
+      setLoadedMsgConvId(null);
+      if (panel === "chat") router.push("/dashboard");
+    }
+  }
+
+  function openConversation(convId: string, unread: number) {
+    if (unread > 0) void markConversationRead(convId);
+    if (panel === "profile") {
+      router.push(`/dashboard?c=${convId}`);
+      return;
+    }
+    setSelectedId(convId);
+  }
 
   return (
     <div className="h-full flex relative overflow-hidden min-h-0" style={{ background: "#ffffff" }}>
@@ -544,7 +646,7 @@ export default function DashboardPage() {
           className="fixed top-14 md:top-16 inset-x-3 md:inset-x-auto md:right-4 z-50 md:max-w-sm md:w-[320px] text-left rounded-xl shadow-lg px-4 py-3 border border-[#d1f4ea] bg-white"
         >
           <p className="text-[#00a884] text-xs font-semibold mb-1">{inAppAlert.title}</p>
-          <p className="text-[#111b21] text-sm leading-relaxed">{inAppAlert.body}</p>
+          <p className="text-[#111b21] text-sm leading-relaxed break-words [overflow-wrap:anywhere]">{inAppAlert.body}</p>
           <p className="text-[#667781] text-[11px] mt-2">
             {inAppAlert.conversationId ? "Clic para abrir el chat" : "Alerta dentro del panel"}
           </p>
@@ -555,13 +657,20 @@ export default function DashboardPage() {
         className={`${showMobileList ? "flex" : "hidden md:flex"} w-full md:w-[360px] shrink-0 flex-col border-r border-[#e9edef] min-h-0 h-full bg-white`}
       >
         <div className="flex items-center justify-between px-3 sm:px-4 py-3 gap-2 bg-[#f0f2f5]">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <Link
+            href="/dashboard/perfil"
+            className={`flex items-center gap-2 sm:gap-3 min-w-0 rounded-lg px-1.5 py-1 -ml-1.5 ${
+              panel === "profile" ? "bg-white" : "hover:bg-white/70"
+            }`}
+          >
             <BusinessAvatar size="sm" />
             <div className="min-w-0">
               <p className="text-[#111b21] font-medium text-sm truncate">{WHATSAPP_DISPLAY_NAME}</p>
-              <p className="text-[#667781] text-[11px] truncate">WhatsApp Business</p>
+              <p className="text-[#667781] text-[11px] truncate">
+                {panel === "profile" ? "Editando perfil" : "Ver perfil"}
+              </p>
             </div>
-          </div>
+          </Link>
           <div className="flex items-center gap-1 text-[#667781] shrink-0">
             {totalUnread > 0 && (
               <span className="text-[10px] sm:text-xs bg-[#25d366] text-white px-1.5 sm:px-2 py-1 rounded-full font-semibold">
@@ -626,19 +735,15 @@ export default function DashboardPage() {
           ) : (
             filteredConvs.map((conv) => {
               const name = conv.customer_name ?? conv.customer_phone;
-              const isSelected = selectedId === conv.id;
+              const isSelected = panel === "chat" && selectedId === conv.id;
               const unread = conv.unread_count ?? 0;
               return (
-                <button
+                <SwipeToDeleteRow
                   key={conv.id}
-                  onClick={() => {
-                    setSelectedId(conv.id);
-                    if (unread > 0) void markConversationRead(conv.id);
-                  }}
-                  className="w-full text-left flex items-center gap-3 px-4 py-3 transition-colors border-b border-[#f0f2f5]"
-                  style={{ background: isSelected ? "#f0f2f5" : "transparent" }}
-                  onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "#f5f6f6"; }}
-                  onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  label={name}
+                  selected={isSelected}
+                  onOpen={() => openConversation(conv.id, unread)}
+                  onDelete={() => deleteConversation(conv.id)}
                 >
                   <div className={`w-12 h-12 rounded-full ${avatarColor(conv.customer_phone)} flex items-center justify-center text-white font-semibold text-base shrink-0`}>
                     {getInitials(conv.customer_name, conv.customer_phone)}
@@ -678,7 +783,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </div>
-                </button>
+                </SwipeToDeleteRow>
               );
             })
           )}
@@ -689,8 +794,10 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      <main className={`${showMobileChat ? "flex w-full" : "hidden md:flex"} flex-1 flex-col min-w-0 min-h-0`}>
-        {!selectedConv ? (
+      <main className={`${showMobileRight ? "flex w-full" : "hidden md:flex"} flex-1 flex-col min-w-0 min-h-0`}>
+        {panel === "profile" ? (
+          <WhatsAppProfilePanel />
+        ) : !selectedConv ? (
           <div className="hidden md:flex flex-1 flex-col items-center justify-center wa-chat-bg">
             <div className="w-20 h-20 rounded-full bg-white shadow-sm flex items-center justify-center mb-4">
               <svg className="w-10 h-10 text-[#00a884]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -743,9 +850,12 @@ export default function DashboardPage() {
                     type="button"
                     onClick={handleMarkNeedsAdvisor}
                     disabled={updatingStatus || advisorColumnMissing}
-                    className="hidden sm:inline text-[11px] sm:text-xs font-medium px-2 sm:px-3 py-1.5 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 disabled:opacity-50 whitespace-nowrap"
+                    className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-medium px-2 sm:px-3 py-1.5 rounded-lg border border-orange-200 text-orange-700 hover:bg-orange-50 disabled:opacity-50 whitespace-nowrap"
                     title="Marcar este chat como que necesita asesor"
                   >
+                    <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                      <path d="M6 3a1 1 0 00-1 1v16.5a.5.5 0 00.8.4L9 18.2l3.2 2.7a1 1 0 001.3 0l3.2-2.7 3.2 2.7a.5.5 0 00.8-.4V4a1 1 0 00-1-1H6z" />
+                    </svg>
                     Bandera
                   </button>
                 )}
@@ -793,7 +903,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 wa-chat-bg">
+            <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-3 space-y-1 wa-chat-bg">
               {loadingMsgs ? (
                 <div className="flex justify-center pt-12">
                   <div className="w-5 h-5 border-2 border-[#d1d7db] border-t-[#00a884] rounded-full animate-spin" />
@@ -821,9 +931,9 @@ export default function DashboardPage() {
                           </span>
                         </div>
                       )}
-                      <div className={`flex ${isCustomer ? "justify-start" : "justify-end"} mb-0.5`}>
+                      <div className={`flex w-full min-w-0 ${isCustomer ? "justify-start" : "justify-end"} mb-0.5`}>
                         <div
-                          className="max-w-[88%] sm:max-w-[80%] md:max-w-[65%] rounded-lg px-3 py-2 text-sm relative shadow-sm"
+                          className="w-fit min-w-0 max-w-[88%] sm:max-w-[80%] md:max-w-[65%] overflow-hidden rounded-lg px-3 py-2 text-sm relative shadow-sm"
                           style={{
                             background: isCustomer ? "#ffffff" : "#d9fdd3",
                             borderRadius: isCustomer ? "0px 7.5px 7.5px 7.5px" : "7.5px 0px 7.5px 7.5px",
@@ -831,7 +941,7 @@ export default function DashboardPage() {
                         >
                           {!isCustomer && (
                             <p className="text-xs font-medium mb-0.5" style={{ color: isAdmin ? "#027eb5" : "#00a884" }}>
-                              {isAdmin ? "Asesor" : "✦ ARGI"}
+                              {isAdmin ? "Asesor" : `✦ ${ASSISTANT_NAME}`}
                             </p>
                           )}
                           {msg.media_url ? (
@@ -843,14 +953,10 @@ export default function DashboardPage() {
                                 className="rounded-md max-w-full w-full object-cover"
                                 referrerPolicy="no-referrer"
                               />
-                              {msg.content && (
-                                <p className="text-[#111b21] leading-relaxed whitespace-pre-wrap text-xs">
-                                  {msg.content}
-                                </p>
-                              )}
+                              {msg.content && <MessageBody content={msg.content} compact />}
                             </div>
                           ) : (
-                            <p className="text-[#111b21] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                            <MessageBody content={msg.content} />
                           )}
                           <p className="text-[#667781] text-[11px] mt-1 text-right">
                             {new Date(msg.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
@@ -868,7 +974,7 @@ export default function DashboardPage() {
               <div
                 className="px-3 sm:px-4 py-3 flex items-center gap-2 sm:gap-3 shrink-0 bg-[#f0f2f5]"
                 style={{
-                  paddingBottom: showMobileChat
+                  paddingBottom: selectedId
                     ? "max(0.75rem, env(safe-area-inset-bottom, 0px))"
                     : undefined,
                 }}
@@ -899,13 +1005,13 @@ export default function DashboardPage() {
               <div
                 className="px-3 sm:px-4 py-3 flex items-center gap-3 shrink-0 bg-[#f0f2f5]"
                 style={{
-                  paddingBottom: showMobileChat
+                  paddingBottom: selectedId
                     ? "max(0.75rem, env(safe-area-inset-bottom, 0px))"
                     : undefined,
                 }}
               >
                 <div className="flex-1 flex items-center justify-center rounded-lg px-3 sm:px-4 py-2.5 bg-white">
-                  <p className="text-[#667781] text-xs sm:text-sm text-center">✦ ARGI está respondiendo automáticamente</p>
+                  <p className="text-[#667781] text-xs sm:text-sm text-center">✦ {ASSISTANT_NAME} está respondiendo automáticamente</p>
                 </div>
               </div>
             )}
@@ -913,5 +1019,21 @@ export default function DashboardPage() {
         )}
       </main>
     </div>
+  );
+}
+
+function DashboardLoading() {
+  return (
+    <div className="h-full flex items-center justify-center bg-white">
+      <div className="w-5 h-5 border-2 border-[#e9edef] border-t-[#00a884] rounded-full animate-spin" />
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardLoading />}>
+      <DashboardWorkspace panel="chat" />
+    </Suspense>
   );
 }

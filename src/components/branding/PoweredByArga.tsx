@@ -16,7 +16,7 @@ export function PoweredByArga({
       rel="noopener noreferrer"
       className={`flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-center transition-opacity hover:opacity-80 ${className}`}
       aria-label="Powered by ARGA Desarrollo de software"
-    >que
+    >
       <span className={`text-[11px] font-normal leading-none ${body}`}>
         Powered by
       </span>

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { signIn } from "../actions";
 import { PoweredByArga } from "@/components/branding/PoweredByArga";
+import { InstallHint } from "@/components/pwa/InstallHint";
 import { BUSINESS_NAME, WHATSAPP_DISPLAY_NAME } from "@/lib/branding";
 
 function WhatsAppMark({ className }: { className?: string }) {
@@ -128,6 +129,7 @@ export default function LoginPage() {
               </p>
             </div>
           </div>
+          <InstallHint />
           <div className="mt-5 pb-1 flex w-full justify-center">
             <PoweredByArga />
           </div>

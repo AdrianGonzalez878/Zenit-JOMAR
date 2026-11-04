@@ -1,21 +1,5 @@
 import type { Lot } from "@/types";
 
-function toNumber(value: number | string | null | undefined): number | null {
-  if (value == null || value === "") return null;
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function formatMoney(value: number | string | null | undefined): string | null {
-  const n = toNumber(value);
-  if (n == null) return null;
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
 function formatServices(lot: Lot): string {
   const items: string[] = [];
   if (lot.has_electricity) items.push("luz");
@@ -31,7 +15,7 @@ export function lotDisplayName(lot: Lot): string {
 
 export function formatLotsParaIA(lots: Lot[]): string {
   if (!lots.length) {
-    return "No hay lotes cargados en el catálogo. No inventes inventario. Dile al cliente que un asesor de JOMAR le confirma disponibilidad, medidas y precios.";
+    return "No hay lotes cargados en el catálogo. No inventes inventario ni precios. Dile al cliente que uno de nuestros asesores le confirma disponibilidad y medidas en la cita.";
   }
 
   return lots
@@ -44,40 +28,6 @@ export function formatLotsParaIA(lots: Lot[]): string {
 
       if (lot.front_m != null) lines.push(`  Frente: ${lot.front_m} m`);
       if (lot.depth_m != null) lines.push(`  Fondo: ${lot.depth_m} m`);
-
-      const costM2 = formatMoney(lot.cost_per_m2);
-      if (costM2) lines.push(`  Costo/m² (preventa ago 2026): ${costM2}`);
-
-      const price = formatMoney(lot.price);
-      lines.push(
-        price
-          ? `  Precio de lista / 24 MSI: ${price}`
-          : "  Precio: no publicado — un asesor lo confirma"
-      );
-
-      const down = formatMoney(lot.down_payment);
-      if (down) lines.push(`  Enganche 10%: ${down}`);
-
-      const m24 = formatMoney(lot.monthly_payment);
-      if (m24) lines.push(`  24 MSI: ${m24}/mes (total ${price})`);
-
-      const p36 = formatMoney(lot.price_36);
-      const m36 = formatMoney(lot.monthly_36);
-      if (p36 && m36) lines.push(`  36 meses: ${m36}/mes (total ${p36})`);
-
-      const p48 = formatMoney(lot.price_48);
-      const m48 = formatMoney(lot.monthly_48);
-      if (p48 && m48) lines.push(`  48 meses: ${m48}/mes (total ${p48})`);
-
-      const p12 = formatMoney(lot.price_12);
-      if (p12) lines.push(`  12 meses (beneficio 4%): total ${p12}`);
-
-      const cash = formatMoney(lot.price_cash);
-      if (cash) lines.push(`  Una sola exhibición (beneficio 8%): ${cash}`);
-
-      if (price) {
-        lines.push("  Fuente precios: tabla de inversión preventa agosto 2026");
-      }
 
       lines.push(`  Servicios: ${formatServices(lot)}`);
       if (lot.maps_url) lines.push(`  Ubicación: ${lot.maps_url}`);
@@ -97,10 +47,60 @@ export function formatLotsParaIA(lots: Lot[]): string {
 }
 
 const PHOTO_KEYWORDS =
-  /\b(foto|fotos|imagen|imagenes|imágenes|muestra|muéstrame|muestrame|verlo|verla|verlos|cómo se ve|como se ve|quiero ver|enséñame|enseñame|mandame|mándame|mapa|ubicación|ubicacion)\b/i;
+  /\b(foto|fotos|imagen|imagenes|imágenes|muestra|muéstrame|muestrame|mostrar|verlo|verla|verlos|cómo se ve|como se ve|quiero ver|enséñame|enseñame)\b/i;
+
+const PLANO_KEYWORDS = /\b(croquis|planos?|lotificaci[oó]n|lotific)\b/i;
+
+const SEE_THE_PLACE =
+  /\b(mostrar(me|nos)?|ver|ense[nñ]ar(me)?|quiero ver|c[oó]mo se ve|c[oó]mo est[aá])\b[\s\S]{0,48}\b(terreno|lugar|desarrollo|proyecto|zenit|foto|fotos)\b|\b(terreno|lugar|desarrollo|proyecto|zenit)\b[\s\S]{0,48}\b(foto|fotos|im[aá]genes?|fotograf[ií]as?|c[oó]mo se ve)\b/i;
+
+const CROQUIS_KEYWORDS =
+  new RegExp(`${PLANO_KEYWORDS.source}|\\b(d[oó]nde|en d[oó]nde|ubicar)\\b[\\s\\S]{0,48}\\b(lote|manzana)\\b|\\b(lote|manzana)\\b[\\s\\S]{0,48}\\b(d[oó]nde queda|d[oó]nde est[aá]|ubicar)\\b`, "i");
+
+const LOCATION_KEYWORDS =
+  /\b(ubicaci[oó]n|c[oó]mo llego|c[oó]mo llegar|direcci[oó]n|google maps|mapa)\b|\bd[oó]nde (queda|est[aá])( el (desarrollo|proyecto|lugar)| zenit)?\b/i;
+
+const DEVELOPMENT_PHOTO_KEYWORDS =
+  /\b(fotos?|im[aá]genes?|fotograf[ií]as?|c[oó]mo se ve|c[oó]mo est[aá] el (lugar|desarrollo|proyecto|terreno))\b/i;
 
 export function customerWantsPhotos(text: string): boolean {
-  return PHOTO_KEYWORDS.test(text);
+  return PHOTO_KEYWORDS.test(text) && !customerWantsDevelopmentPhotos(text);
+}
+
+export function customerWantsDevelopmentPhotos(text: string): boolean {
+  const withoutPlano = text.replace(/\bplanos?\b/gi, " ");
+  const asksPhotos =
+    DEVELOPMENT_PHOTO_KEYWORDS.test(text) || SEE_THE_PLACE.test(withoutPlano);
+  if (PLANO_KEYWORDS.test(text) && !/\b(foto|fotos|im[aá]genes?|fotograf[ií]as?|terreno|lugar|desarrollo|zenit)\b/i.test(withoutPlano)) {
+    return false;
+  }
+  return asksPhotos;
+}
+
+export function customerWantsCroquis(text: string): boolean {
+  return PLANO_KEYWORDS.test(text) || CROQUIS_KEYWORDS.test(text);
+}
+
+export const ZENIT_MAPS_URL =
+  "https://www.google.com/maps/search/?api=1&query=Bajos+de+Chila,+San+Pedro+Mixtepec,+Oaxaca";
+
+export function customerWantsLocation(text: string): boolean {
+  if (!LOCATION_KEYWORDS.test(text)) return false;
+  const aboutLot = /\b(lote|manzana|terreno)\b/i.test(text);
+  const aboutPlace =
+    /\b(ubicaci[oó]n|c[oó]mo llego|c[oó]mo llegar|direcci[oó]n|google maps|mapa|desarrollo|proyecto|zenit)\b/i.test(
+      text
+    );
+  if (aboutLot && !aboutPlace) return false;
+  return true;
+}
+
+export function extractLotCodes(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.toUpperCase().matchAll(/M\s*([1-4])[\s-]*L\s*-?\s*([1-7])/g)) {
+    found.add(`M${match[1]}-L${match[2]}`);
+  }
+  return [...found];
 }
 
 function scoreLotMatch(lot: Lot, haystack: string): number {

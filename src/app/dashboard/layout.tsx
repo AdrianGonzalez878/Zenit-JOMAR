@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/(auth)/actions";
 import { EnablePushButton } from "@/components/dashboard/EnablePushButton";
+import { HeaderProfileLink } from "@/components/dashboard/HeaderProfileLink";
+import { WhatsAppProfileProvider } from "@/components/dashboard/WhatsAppProfileContext";
 import { WHATSAPP_DISPLAY_NAME } from "@/lib/branding";
 
 function WhatsAppMark({ className }: { className?: string }) {
@@ -34,7 +36,8 @@ export default async function DashboardLayout({
   const email = user.email ?? "Admin";
 
   return (
-    <div className="h-screen flex flex-col bg-[#d1d7db]">
+    <WhatsAppProfileProvider>
+    <div className="h-dvh overflow-hidden flex flex-col bg-[#d1d7db]">
       <header className="shrink-0 safe-top" style={{ background: "#00a884" }}>
         <div className="h-12 md:h-[52px] flex items-center justify-between gap-3 px-3 md:px-4">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -51,6 +54,7 @@ export default async function DashboardLayout({
 
           <div className="flex items-center gap-2 shrink-0">
             <EnablePushButton />
+            <HeaderProfileLink />
 
             <div className="hidden md:flex items-center gap-2 max-w-[220px] px-2.5 py-1.5 rounded-lg bg-white/15">
               <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold text-[#00a884] bg-white shrink-0">
@@ -77,5 +81,6 @@ export default async function DashboardLayout({
 
       <div className="flex-1 overflow-hidden min-h-0">{children}</div>
     </div>
+    </WhatsAppProfileProvider>
   );
 }
