@@ -18,11 +18,10 @@ La guía de septiembre dice “6 lotes vendidos” sin desglose; el plano marca 
 - Inventario: **28 lotes** residenciales en 4 manzanas (M1–M4, L-1 a L-7)
 - Idea de venta: ubicación + proyecto + infraestructura + patrimonio. No vender “solo un lote”.
 
-## Distancias (según guía; son aproximadas)
+## Distancias (respuesta del cliente en el PDF de campaña, noviembre 2026)
 
-- ~5 min del aeropuerto
-- ~3 min de Playa Palmarito
-- ~5 min de Playa Delfines
+- La playa más cercana es Playa Delfines. No usar Playa Palmarito.
+- ~7 min del aeropuerto de Puerto Escondido. No usar los 5 minutos de los anuncios viejos.
 
 ## Infraestructura contemplada
 
