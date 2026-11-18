@@ -26,7 +26,8 @@ import {
   type AdvisorNeedReason,
 } from "@/lib/ai/needs-advisor";
 import { sendTeamPush } from "@/lib/push/send";
-import { recordConfirmedCall } from "@/lib/crm/schedule-call";
+import { recordConfirmedCall, takenHourKeys } from "@/lib/crm/schedule-call";
+import { callSlotOffer } from "@/lib/ai/office-hours";
 import type { Lot } from "@/types";
 
 const REPLY_DELAY_SECONDS = 6;
@@ -303,7 +304,11 @@ async function replyToCustomer(supabase: ServiceClient, payload: ReplyPayload) {
   const lots = (lotsData ?? []) as Lot[];
   const result = await generateText({
     model: anthropic("claude-haiku-4-5"),
-    system: buildSystemPrompt(formatLotsParaIA(lots), conversation.customer_name || payload.customerName),
+    system: buildSystemPrompt(
+      formatLotsParaIA(lots),
+      conversation.customer_name || payload.customerName,
+      callSlotOffer(new Date(), await takenHourKeys(supabase, conversation.id))
+    ),
     messages: buildAIMessageHistory(prior, customerText),
   });
 

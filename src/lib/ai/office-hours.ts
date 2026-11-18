@@ -74,43 +74,59 @@ function dayLabel(shift: number, weekday: number): string {
   return `el ${WEEKDAYS[weekday]}`;
 }
 
-function nextOpenDay(stamp: MexicoStamp, startShift: number) {
-  for (let shift = startShift; shift < 8; shift += 1) {
+const CALL_MINUTES = 30;
+
+export function mexicoHourKey(date: Date): string {
+  const stamp = mexicoStamp(date);
+  const hour = stamp.hour === 24 ? 0 : stamp.hour;
+  return `${stamp.year}-${stamp.month}-${stamp.day}-${hour * 60 + stamp.minute}`;
+}
+
+export function slotIsBusy(year: number, month: number, day: number, minutes: number, taken: Set<string>): boolean {
+  const prefix = `${year}-${month}-${day}-`;
+  for (const key of taken) {
+    if (!key.startsWith(prefix)) continue;
+    const other = Number(key.slice(prefix.length));
+    if (!Number.isFinite(other)) continue;
+    if (minutes < other + CALL_MINUTES && other < minutes + CALL_MINUTES) return true;
+  }
+  return false;
+}
+
+function hourStarts(window: { open: number; close: number }): number[] {
+  const starts: number[] = [];
+  for (let minute = window.open; minute + CALL_MINUTES <= window.close; minute += CALL_MINUTES) starts.push(minute);
+  return starts;
+}
+
+function joinSpanish(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] ?? "";
+  if (labels.length === 2) return `${labels[0]} o ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")} o ${labels[labels.length - 1]}`;
+}
+
+/** Tres horarios, cada 30 minutos, que todavía caben y no se empalman con otra llamada. */
+export function callSlotOffer(now = new Date(), taken: Set<string> = new Set()): string {
+  const stamp = mexicoStamp(now);
+  const nowMinutes = stamp.hour * 60 + stamp.minute;
+  const labels: string[] = [];
+
+  for (let shift = 0; shift < 8 && labels.length < 3; shift += 1) {
     const date = addCalendarDays(stamp.year, stamp.month, stamp.day, shift);
     const weekday = weekdayOf(date.year, date.month, date.day);
     const window = windowFor(weekday);
     if (!window) continue;
-    return { shift, weekday, window };
-  }
-  return null;
-}
-
-const NOON = 12 * 60;
-
-/**
- * Pregunta de la mañana o de la tarde, según la hora actual.
- * No propone horas en punto.
- */
-export function callSlotOffer(now = new Date()): string {
-  const stamp = mexicoStamp(now);
-  const nowMinutes = stamp.hour * 60 + stamp.minute;
-  const today = windowFor(stamp.weekday);
-  const morningEnd = today ? Math.min(NOON, today.close) : 0;
-  const morningLeft = today != null && morningEnd > today.open && nowMinutes < morningEnd - 30;
-  const afternoonLeft = today != null && NOON < today.close && nowMinutes < today.close - 30;
-
-  if (morningLeft && afternoonLeft) {
-    return "Pregunta solo si prefiere la llamada hoy en la mañana o hoy en la tarde. No des una hora en punto.";
-  }
-  if (afternoonLeft) {
-    const next = nextOpenDay(stamp, 1);
-    const nextDay = next ? dayLabel(next.shift, next.weekday) : "mañana";
-    return `Ya no ofrezcas la mañana de hoy. Pregunta solo si prefiere hoy en la tarde o ${nextDay} en la mañana. No des una hora en punto.`;
+    for (const minute of hourStarts(window)) {
+      if (shift === 0 && minute < nowMinutes + 20) continue;
+      if (slotIsBusy(date.year, date.month, date.day, minute, taken)) continue;
+      const hour = Math.floor(minute / 60);
+      labels.push(`${dayLabel(shift, weekday)} a las ${formatClock(hour, minute % 60)}`);
+      if (labels.length === 3) break;
+    }
   }
 
-  const next = nextOpenDay(stamp, today && nowMinutes < today.open ? 0 : 1);
-  if (!next) return "No hay horario de oficina en los próximos días.";
-  const when = dayLabel(next.shift, next.weekday);
-  const closed = today && nowMinutes < today.open ? "" : "Hoy ya no queda horario. ";
-  return `${closed}Pregunta solo si prefiere ${when} en la mañana o ${when} en la tarde. No des una hora en punto.`;
+  if (!labels.length) {
+    return "No quedan horas libres en los próximos días. Di que un asesor confirma el horario. No inventes una hora.";
+  }
+  return `Cada llamada dura unos 30 minutos. Pregunta solo entre estas horas libres: ${joinSpanish(labels)}. Si elige una, confírmala tal cual. Si pide otra hora que sí cabe en el horario de oficina y no está ocupada, también confírmala tal cual, aunque no esté en esta lista. Si esa hora está ocupada o queda fuera del horario, no la confirmes y ofrece la siguiente libre.`;
 }

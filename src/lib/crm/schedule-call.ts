@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { formatClock, isWithinOfficeHours, weekdayOf } from "@/lib/ai/office-hours";
+import { formatClock, isWithinOfficeHours, mexicoHourKey, slotIsBusy } from "@/lib/ai/office-hours";
 
 const TIME_ZONE = "America/Mexico_City";
 
@@ -87,7 +87,7 @@ export function parseChosenSlot(text: string, now = new Date()): ChosenSlot | nu
   const noonPhrase = /\bmedio\s*dia\b/.test(folded) || /\b(?:12|doce)\s+del\s+dia\b/.test(folded);
   const ampmMatch = folded.match(/\b(?:a las )?(\d{1,2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm)\b/);
   const hourMatch = folded.match(
-    /\ba las (una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|\d{1,2})(?::(\d{2}))?\b/
+    /\b(?:a las|las) (una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|\d{1,2})(?::(\d{2}))?(?: y (?:media|treinta))?\b/
   );
   const clockCount = folded.match(/\b(\d{1,2})(?::\d{2})?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm)\b/g)?.length ?? 0;
   const periods = [morning, afternoon, night].filter(Boolean).length;
@@ -130,7 +130,7 @@ export function parseChosenSlot(text: string, now = new Date()): ChosenSlot | nu
   } else if (hourMatch) {
     const token = hourMatch[1];
     let parsed = HOUR_WORDS[token] ?? Number(token);
-    minute = hourMatch[2] ? Number(hourMatch[2]) : 0;
+    minute = hourMatch[2] ? Number(hourMatch[2]) : /y (?:media|treinta)/.test(hourMatch[0]) ? 30 : 0;
     if (parsed >= 1 && parsed <= 6) parsed += 12;
     clockHour = parsed;
   }
@@ -160,13 +160,8 @@ export function parseChosenSlot(text: string, now = new Date()): ChosenSlot | nu
 
   const resolve = (shiftDays: number) => {
     const date = addDays(today.year, today.month, today.day, shiftDays);
-    const day = weekdayOf(date.year, date.month, date.day);
     let hour = clockHour;
-    if (hour == null) {
-      if (morning) hour = day === 6 ? 10 : 9;
-      else if (afternoon) hour = day === 6 ? 13 : 16;
-      else return null;
-    }
+    if (hour == null) return null;
     if (!isWithinOfficeHours(date.year, date.month, date.day, hour, minute)) return null;
     return { hour, scheduledAt: zonedToUtc(date.year, date.month, date.day, hour, minute) };
   };
@@ -201,6 +196,7 @@ export async function recordConfirmedCall(
   const assistantAsks = /\?\s*$/.test(input.assistantText.trim());
   const slot = fromCustomer ?? (!assistantAsks ? fromAssistant : null);
   if (!slot) return false;
+  if (await hourIsTaken(supabase, slot.scheduledAt, input.conversationId)) return false;
 
   const title = `Llamada ${slot.label}`;
   const { data: existing } = await supabase
@@ -258,6 +254,34 @@ export async function recordConfirmedCall(
 
   await notifyCalendarSync();
   return true;
+}
+
+export async function takenHourKeys(supabase: SupabaseClient, exceptConversationId: string) {
+  const from = new Date(Date.now() - 60 * 60_000).toISOString();
+  const until = new Date(Date.now() + 8 * 24 * 60 * 60_000).toISOString();
+  const { data, error } = await supabase
+    .from("crm_appointments")
+    .select("scheduled_at, conversation_id")
+    .eq("status", "pendiente")
+    .gte("scheduled_at", from)
+    .lt("scheduled_at", until);
+  if (error) {
+    console.error("No se pudieron leer las llamadas ocupadas:", error.message);
+    return new Set<string>();
+  }
+  const taken = new Set<string>();
+  for (const row of data ?? []) {
+    if (row.conversation_id === exceptConversationId || !row.scheduled_at) continue;
+    taken.add(mexicoHourKey(new Date(row.scheduled_at)));
+  }
+  return taken;
+}
+
+async function hourIsTaken(supabase: SupabaseClient, scheduledAt: Date, conversationId: string) {
+  const taken = await takenHourKeys(supabase, conversationId);
+  const key = mexicoHourKey(scheduledAt);
+  const [year, month, day, minutes] = key.split("-").map(Number);
+  return slotIsBusy(year, month, day, minutes, taken);
 }
 
 async function notifyCalendarSync() {
